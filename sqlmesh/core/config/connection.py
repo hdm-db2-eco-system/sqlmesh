@@ -241,6 +241,7 @@ class DuckDBAttachOptions(BaseConfig):
 
     # DuckLake specific options
     data_path: t.Optional[str] = None
+    override_data_path: t.Optional[bool] = False
     encrypted: bool = False
     data_inlining_row_limit: t.Optional[int] = None
     metadata_schema: t.Optional[str] = None
@@ -261,6 +262,8 @@ class DuckDBAttachOptions(BaseConfig):
                 path = f"ducklake:{path}"
             if self.data_path is not None:
                 options.append(f"DATA_PATH '{self.data_path}'")
+                if self.override_data_path:
+                    options.append("OVERRIDE_DATA_PATH true")
             if self.encrypted:
                 options.append("ENCRYPTED")
             if self.data_inlining_row_limit is not None:
@@ -816,6 +819,8 @@ class DatabricksConnectionConfig(ConnectionConfig):
     DIALECT: t.ClassVar[t.Literal["databricks"]] = "databricks"
     DISPLAY_NAME: t.ClassVar[t.Literal["Databricks"]] = "Databricks"
     DISPLAY_ORDER: t.ClassVar[t.Literal[3]] = 3
+
+    shared_connection: t.ClassVar[bool] = True
 
     _concurrent_tasks_validator = concurrent_tasks_validator
     _http_headers_validator = http_headers_validator
@@ -2098,6 +2103,7 @@ class ClickhouseConnectionConfig(ConnectionConfig):
     https_proxy: t.Optional[str] = None
     server_host_name: t.Optional[str] = None
     tls_mode: t.Optional[str] = None
+    secure: bool = False
 
     concurrent_tasks: int = 1
     register_comments: bool = True
@@ -2134,6 +2140,7 @@ class ClickhouseConnectionConfig(ConnectionConfig):
             "https_proxy",
             "server_host_name",
             "tls_mode",
+            "secure",
         }
         return kwargs
 

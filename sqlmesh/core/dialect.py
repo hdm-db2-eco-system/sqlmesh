@@ -481,10 +481,14 @@ def _parse_types(
     check_func: bool = False,
     schema: bool = False,
     allow_identifiers: bool = True,
+    with_collation: bool = False,
 ) -> t.Optional[exp.Expr]:
     start = self._curr
     parsed_type = self.__parse_types(  # type: ignore
-        check_func=check_func, schema=schema, allow_identifiers=allow_identifiers
+        check_func=check_func,
+        schema=schema,
+        allow_identifiers=allow_identifiers,
+        with_collation=with_collation,
     )
 
     if schema and parsed_type:
@@ -770,7 +774,8 @@ def format_model_expressions(
     if rewrite_casts:
 
         def cast_to_colon(node: exp.Expr) -> exp.Expr:
-            if isinstance(node, exp.Cast) and not any(
+            # Directly check type instead of isinstance to avoid rewriting subclasses of CAST, e.g. JSONCast
+            if type(node) is exp.Cast and not any(
                 # Only convert CAST into :: if it doesn't have additional args set, otherwise this
                 # conversion could alter the semantics (eg. changing SAFE_CAST in BigQuery to CAST)
                 arg

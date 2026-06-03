@@ -570,12 +570,12 @@ def test_cleanup_fails(adapter_mock, make_snapshot):
     snapshot.version = "test_version"
 
     evaluator.promote([snapshot], EnvironmentNamingInfo(name="test_env"))
-    with pytest.raises(NodeExecutionFailedError) as exc_info:
+    with pytest.raises(SQLMeshError) as exc_info:
         evaluator.cleanup(
             [SnapshotTableCleanupTask(snapshot=snapshot.table_info, dev_table_only=True)]
         )
 
-    assert str(exc_info.value.__cause__) == "test_error"
+    assert "test_error" in str(exc_info.value)
 
 
 def test_cleanup_skip_missing_table(adapter_mock, make_snapshot):
@@ -4500,6 +4500,41 @@ def test_multiple_engine_cleanup(snapshot: Snapshot, adapters, make_snapshot):
     )
     engine_adapters["secondary"].drop_table.assert_called_once_with(
         f"sqlmesh__test_schema.test_schema__test_model__{snapshot_2.version}__dev", cascade=True
+    )
+
+
+def test_cleanup_skips_unavailable_gateway(snapshot: Snapshot, adapters, make_snapshot):
+    engine_adapters = {"default": adapters[0]}
+    evaluator = SnapshotEvaluator(engine_adapters)
+
+    model_with_missing_gw = load_sql_based_model(
+        parse(  # type: ignore
+            """
+            MODEL (
+                name test_schema.test_model,
+                kind FULL,
+                gateway nonexistent_gateway,
+            );
+            SELECT a::int FROM tbl;
+            """
+        ),
+    )
+
+    snapshot_missing_gw = make_snapshot(model_with_missing_gw)
+    snapshot.categorize_as(SnapshotChangeCategory.BREAKING)
+    snapshot_missing_gw.categorize_as(SnapshotChangeCategory.BREAKING)
+
+    evaluator.create([snapshot], {}, DeployabilityIndex.all_deployable())
+
+    evaluator.cleanup(
+        [
+            SnapshotTableCleanupTask(snapshot=snapshot.table_info, dev_table_only=True),
+            SnapshotTableCleanupTask(snapshot=snapshot_missing_gw.table_info, dev_table_only=True),
+        ],
+    )
+
+    engine_adapters["default"].drop_table.assert_called_once_with(
+        f"sqlmesh__db.db__model__{snapshot.version}__dev", cascade=True
     )
 
 
