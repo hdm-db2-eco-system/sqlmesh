@@ -39,11 +39,8 @@ DIALECT_TO_ENGINE_ADAPTER = {
     "athena": AthenaEngineAdapter,
     "risingwave": RisingwaveEngineAdapter,
     "fabric": FabricEngineAdapter,
-<<<<<<< HEAD
     "db2": Db2EngineAdapter,
-=======
     "starrocks": StarRocksEngineAdapter,
->>>>>>> main
 }
 
 DIALECT_ALIASES = {
