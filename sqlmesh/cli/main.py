@@ -44,6 +44,17 @@ SKIP_CONTEXT_COMMANDS = ("init", "ui")
 LOCAL_ONLY_COMMANDS = ("format",)
 
 
+class _SQLMeshGroup(click.Group):
+    def parse_args(self, ctx: click.Context, args: t.List[str]) -> t.List[str]:
+        rest = super().parse_args(ctx, args)
+        # Preserve the subcommand arguments because Click consumes them before invoking the group callback.
+        protected_args = getattr(ctx, "_protected_args", None)
+        if protected_args is None:
+            protected_args = ctx.protected_args
+        ctx.meta["subcommand_args"] = tuple(protected_args) + tuple(ctx.args)
+        return rest
+
+
 def _sqlmesh_version() -> str:
     try:
         from sqlmesh import __version__
@@ -53,7 +64,7 @@ def _sqlmesh_version() -> str:
         return "0.0.0"
 
 
-@click.group(no_args_is_help=True)
+@click.group(cls=_SQLMeshGroup, no_args_is_help=True)
 @click.version_option(version=_sqlmesh_version(), message="%(version)s")
 @opt.paths
 @opt.config
@@ -118,6 +129,9 @@ def cli(
     load = True
     # Local-only gating must hold for any number of --paths, so it stays outside the block below.
     load_state = ctx.invoked_subcommand not in LOCAL_ONLY_COMMANDS
+    # The parent callback constructs Context before Click invokes `lint`, so inspect its parsed args here.
+    if ctx.invoked_subcommand == "lint" and "--local" in ctx.meta["subcommand_args"]:
+        load_state = False
 
     if len(paths) == 1:
         path = os.path.abspath(paths[0])
@@ -126,6 +140,10 @@ def cli(
             return
         if ctx.invoked_subcommand in SKIP_LOAD_COMMANDS:
             load = False
+
+    # Unlike the other commands above, lint can scope its own load for multi-project contexts.
+    if ctx.invoked_subcommand == "lint":
+        load = False
 
     configs = load_configs(config, Context.CONFIG_TYPE, paths, dotenv_path=dotenv)
     log_limit = list(configs.values())[0].log_limit
@@ -539,6 +557,7 @@ def diff(ctx: click.Context, environment: t.Optional[str] = None) -> None:
 )
 @click.option(
     "--min-intervals",
+    type=int,
     default=None,
     help="For every model, ensure at least this many intervals are covered by a missing intervals check regardless of the plan start date",
 )
@@ -626,7 +645,7 @@ def run(ctx: click.Context, environment: t.Optional[str] = None, **kwargs: t.Any
 def invalidate(ctx: click.Context, environment: str, **kwargs: t.Any) -> None:
     """Invalidate the target environment, forcing its removal during the next run of the janitor process."""
     context = ctx.obj
-    context.invalidate_environment(environment, **kwargs)
+    context.invalidate_environment(environment, must_exist=True, **kwargs)
 
 
 @cli.command("janitor")
@@ -1194,15 +1213,36 @@ def environments(obj: Context) -> None:
     multiple=True,
     help="A model to lint. Multiple models can be linted. If no models are specified, every model will be linted.",
 )
+@click.option(
+    "--use-project-index",
+    is_flag=True,
+    default=None,
+    help="Use the persistent project index. With --model, only the selected models and their upstream dependencies are loaded, resolved, and validated, so errors in unrelated models are not reported. Without --model, every model is still loaded and linted. Can also be enabled with linter.use_project_index.",
+)
+@click.option(
+    "--local",
+    is_flag=True,
+    expose_value=False,
+    help="Lint using only locally loaded project files without loading state.",
+)
 @click.pass_obj
 @error_handler
 @cli_analytics
 def lint(
     obj: Context,
     models: t.Iterator[str],
+    use_project_index: t.Optional[bool],
 ) -> None:
     """Run the linter for the target model(s)."""
-    obj.lint_models(models)
+    obj.lint_models(
+        models,
+        use_project_index=use_project_index,
+    )
+
+    if not obj.models:
+        raise click.ClickException(
+            f"`{obj.path}` doesn't seem to have any models... cd into the proper directory or specify the path(s) with -p."
+        )
 
 
 @cli.group(no_args_is_help=True)
